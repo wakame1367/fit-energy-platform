@@ -1,101 +1,36 @@
-name: Deploy FIT Energy Scraper
+name: Build & Deploy Lambda Image
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-
-env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY: fit-energy-scraper
-  IMAGE_TAG: ${{ github.sha }}
+    paths:
+      - 'apps/**'
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  deploy:
-    name: Deploy to AWS Lambda
+  build_and_push:
     runs-on: ubuntu-latest
-    environment: production
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, tag, and push Docker image to ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      run: |
-        # Build Docker image
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-        
-        # Push image to ECR
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      - name: Build & Push Docker image
+        run: |
+          IMAGE_TAG=sha-${{ github.sha }}
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG apps/scraper
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG
+          echo "::set-output name=image_uri::${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG"
 
-    - name: Install lambroll
-      run: |
-        curl -L https://github.com/fujiwara/lambroll/releases/latest/download/lambroll_linux_amd64.tar.gz | tar xzf -
-        sudo mv lambroll /usr/local/bin/
-
-    - name: Update function.json with ECR image URI
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      run: |
-        # Replace placeholders in function.json
-        sed -i "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g" function.json
-        sed -i "s|REGION|${{ env.AWS_REGION }}|g" function.json
-        sed -i "s|fit-energy-scraper:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" function.json
-
-    - name: Deploy Lambda function with lambroll
-      env:
-        ECR_REPOSITORY_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
-        ENVIRONMENT: production
-      run: |
-        # Deploy using lambroll
-        lambroll deploy --config lambroll.yml
-        
-        # Create or update EventBridge rule for scheduled execution (optional)
-        aws events put-rule \
-          --name fit-energy-scraper-schedule \
-          --schedule-expression "rate(6 hours)" \
-          --description "Schedule FIT energy scraper every 6 hours"
-        
-        # Add Lambda permission for EventBridge to invoke the function
-        aws lambda add-permission \
-          --function-name fit-energy-scraper \
-          --statement-id fit-energy-scraper-schedule \
-          --action lambda:InvokeFunction \
-          --principal events.amazonaws.com \
-          --source-arn "arn:aws:events:${{ env.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:rule/fit-energy-scraper-schedule" \
-          2>/dev/null || echo "Permission already exists"
-        
-        # Add EventBridge target
-        aws events put-targets \
-          --rule fit-energy-scraper-schedule \
-          --targets "Id"="1","Arn"="arn:aws:lambda:${{ env.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:function:fit-energy-scraper"
-
-    - name: Test Lambda function
-      run: |
-        # Invoke the function to test deployment
-        aws lambda invoke \
-          --function-name fit-energy-scraper \
-          --payload '{}' \
-          --cli-binary-format raw-in-base64-out \
-          response.json
-        
-        # Display response
-        cat response.json
+      - name: Deploy Lambda via lambroll
+        working-directory: apps/scraper
+        run: |
+          lambroll deploy --image-uri "${{ steps.build-and-push.outputs.image_uri }}"
