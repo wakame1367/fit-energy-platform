@@ -47,4 +47,4 @@ jobs:
       - name: Deploy Lambda via lambroll
         working-directory: infra/lambroll
         run: |
-          lambroll deploy --image-uri "${{ steps.build-push.outputs.image_uri }}"
+          lambroll deploy
