@@ -32,7 +32,7 @@ def lambda_handler(event, context):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        download_links = soup.find_all('a', href=re.compile(r'servlet\.FileDownload\?file='))
+        download_links = soup.find_all("a", href=re.compile(r"^/servlet/servlet\.FileDownload"))
 
         logger.info(f"Found {len(download_links)} download links")
         processed_files = []
