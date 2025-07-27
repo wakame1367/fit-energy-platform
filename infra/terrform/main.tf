@@ -35,8 +35,8 @@ resource "aws_iam_role_policy" "s3_access" {
     Version = "2012-10-17",
     Statement = [{
       Effect   = "Allow",
-      Action   = ["s3:PutObject", "s3:GetObject", "s3:HeadObject"],
-      Resource = "${aws_s3_bucket.infra.arn}/*"
+      Action   = ["s3:PutObject", "s3:GetObject", "s3:HeadObject", "s3:ListBucket"],
+      Resource = [aws_s3_bucket.infra.arn, "${aws_s3_bucket.infra.arn}/*"]
     }]
   })
 }
