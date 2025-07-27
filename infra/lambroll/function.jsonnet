@@ -9,7 +9,7 @@
   Timeout: 300,
   Environment: {
     Variables: {
-      S3_BUCKET: 'fit-energy-data'
+      S3_BUCKET: 'fit-energy-platform'
     }
   },
 }
