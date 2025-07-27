@@ -1,7 +1,7 @@
 {
   FunctionName: 'fit-energy-scraper',
   PackageType: 'Image',
-  Role: '{{ must_env `ROLE_ARN` }}',
+  Role: 'arn:aws:iam::086854724267:role/fit-energy-platform-lambroll-lambda-role',
   Code: {
     ImageUri: '{{ must_env `IMAGE_URI` }}'
   },
